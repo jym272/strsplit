@@ -7,60 +7,58 @@
 
 
 #[derive(Debug)]
-pub struct StrSplit<'haystack, 'delimiter> {
+pub struct StrSplit<'haystack, D> {
     remainder: Option<&'haystack str>,
-    delimiter: &'delimiter str,
+    delimiter: D,
 
 }
 
-impl<'haystack, 'delimiter> StrSplit<'haystack, 'delimiter> {
-    pub fn new(haystack: &'haystack str, delimiter: &'delimiter str) -> Self {
+trait Delimiter {
+    fn find_next(&self, haystack: &str) -> Option<(usize, usize)>;
+}
+
+impl<'haystack, D> StrSplit<'haystack, D> {
+    pub fn new(haystack: &'haystack str, delimiter: D) -> Self {
         Self {
             remainder: Some(haystack),
             delimiter,
         }
     }
 }
-                                                 //don't care about the delimiter lifetime
-impl<'haystack> Iterator for StrSplit<'haystack, '_>
-    // where 'delimiter: 'haystack //lifetime bound, delimiter must be in haystack and lives at least as long as haystack
+impl<'haystack, D> Iterator for StrSplit<'haystack, D>
+    where D: Delimiter
 {
     type Item = &'haystack str; //return type of the iterator with 'haystack lifetime
     fn next(&mut self) -> Option<Self::Item> {
         let remainder = self.remainder?;
-        match remainder.find(self.delimiter) {
-            Some(index) => {
-                let (left, right) = remainder.split_at(index);
-                self.remainder = Some(right.trim_start_matches(self.delimiter));
-                Some(left)
+        match self.delimiter.find_next(remainder) {
+            Some((start, end)) => {
+                self.remainder = Some(&remainder[end..]);
+                Some(&remainder[..start])
             }
             None => {
-                // self.remainder = None;
-                // Some(remainder)
                 self.remainder.take()
             }
+
         }
     }
 }
 
+impl Delimiter for &'_ str {
+    fn find_next(&self, haystack: &str) -> Option<(usize, usize)> {
+        haystack.find(self).map(|start| (start, start + self.len()))
+
+    }
+}
+impl Delimiter for char {
+    fn find_next(&self, haystack: &str) -> Option<(usize, usize)> {
+        haystack.char_indices().find(|(_, c)| *c == *self).map(|(start, _)| (start, start + self.len_utf8()))
+    }
+}
 
 
-// fn until_char(haystack: &str, delimiter: char) -> &str {
-//     match haystack.find(delimiter) {
-//         Some(index) => &haystack[..index],
-//         None => haystack,
-//     }
-// }
 fn until_char(haystack: &str, delimiter: char) -> &str {
-    let delim = format!("{}", delimiter); //lifetime is in the scope of this function
-
-    //The compiler in "new" choose the shorter lifetime between the two, that's delim lifetime.
-    //so, haystack hast 'delim lifetime.
-    //Cannot return the value, delim is gonna be deallocated after the function ends.
-    //We need to define two separate lifetime, one for the haystack and one for the delimiter, that way,
-    //haystack has his own lifetime, and delim has his own lifetime. (haystack/and his lifetime/ is returned)
-
-    StrSplit::new(haystack, &delim).next().expect("Always at least one result")
+    StrSplit::new(haystack, delimiter).next().expect("Always at least one result")
 }
 
 
